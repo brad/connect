@@ -11,6 +11,8 @@ Try it with your openpilot device:
 * Install dependencies: `bun install`
 * Start dev server: `bun start`
 * Demo mode: Navigate to `/demo` to test locally without a comma device.
+* Browser tests: `bun run test:e2e` builds the app and drives `/demo` in Chromium.
+  `BASE_URL=https://<pr>.connect-d5y.pages.dev bun run test:e2e` runs them against a PR preview.
 
 API and useradmin URL roots can be overridden at build time with
 `VITE_COMMA_URL_ROOT`, `VITE_ATHENA_URL_ROOT`, `VITE_BILLING_URL_ROOT`, and
