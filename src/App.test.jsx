@@ -233,6 +233,14 @@ describe('whole-app behavior', () => {
     });
   });
 
+  test('a drive opened from a link closes to the drive list (#532)', async () => {
+    const { history } = await renderApp(`/${FIRST}/${LOG}`);
+    expect(await screen.findByRole('slider', { name: 'Drive timeline' })).toBeVisible();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Close' })[0]);
+    await waitFor(() => expect(history.location.pathname).toBe(`/${FIRST}`));
+    expect(await screen.findByText('Mock recent route start')).toBeVisible();
+  });
+
   test.each([
     ['private device', `/${FIRST}`], ['Prime', `/${FIRST}/prime`], ['stream', `/${FIRST}/stream`],
   ])('signed-out %s entry retains its path', async (_name, pathname) => {
