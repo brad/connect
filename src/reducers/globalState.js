@@ -1,6 +1,8 @@
+import { LOCATION_CHANGE } from 'connected-react-router';
+
 import * as Types from '../actions/types';
 import { emptyDevice } from '../utils';
-import { getDefaultFilter } from '../utils/filter';
+import { applyLocation } from './location';
 
 const eventsMap = {};
 const locationMap = {};
@@ -53,33 +55,8 @@ export default function reducer(_state, action) {
       state.profile = action.profile;
       break;
     }
-    case Types.ACTION_SELECT_DEVICE:
-      state = {
-        ...state,
-        filter: getDefaultFilter(),
-        dongleId: action.dongleId,
-        subscription: null,
-        subscribeInfo: null,
-        files: null,
-        limit: 0,
-      };
-      window.localStorage.setItem('selectedDongleId', action.dongleId);
-      if (state.devices) {
-        const newDevice = state.devices.find((device) => device.dongle_id === action.dongleId) || null;
-        if (!state.device || state.device.dongle_id !== action.dongleId) {
-          state.device = newDevice;
-        }
-      }
-      if (state.routesMeta && state.routesMeta.dongleId !== state.dongleId) {
-        state.routesMeta = {
-          dongleId: null,
-          start: null,
-          end: null,
-        };
-        state.routes = null;
-        state.lastRoutes = null;
-        state.currentRoute = null;
-      }
+    case LOCATION_CHANGE:
+      state = applyLocation(state, action.payload.location.pathname);
       break;
     case Types.ACTION_SELECT_TIME_FILTER:
       state = {
@@ -318,26 +295,6 @@ export default function reducer(_state, action) {
         subscription: null,
       };
       break;
-    case Types.TIMELINE_SELECT: {
-      const zoomedIn = state.zoom && action.start !== null && action.end !== null
-        && action.start >= state.zoom.start && action.end <= state.zoom.end;
-      if (!zoomedIn) {
-        state.files = null;
-      }
-
-      state.selectedRouteId = action.log_id;
-      state.currentRoute = state.routes?.find((route) => route.log_id === action.log_id) || null;
-      if (action.log_id && action.start !== null && action.end !== null) {
-        state.zoom = { start: action.start, end: action.end };
-      } else if (state.currentRoute) {
-        state.zoom = { start: 0, end: state.currentRoute.duration };
-        state.loop = null;
-      } else {
-        state.zoom = null;
-        state.loop = null;
-      }
-      break;
-    }
     case Types.ACTION_FILES_URLS:
       state.files = {
         ...(state.files !== null ? { ...state.files } : {}),

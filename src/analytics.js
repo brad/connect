@@ -51,6 +51,18 @@ export function attachRelTime(obj, key, ms = true, cluster = null) {
   }
 }
 
+function deviceProperties(device) {
+  return {
+    device_prime_type: device?.prime_type,
+    device_type: device?.device_type,
+    device_version: device?.openpilot_version,
+    device_owner: device?.is_owner,
+    device_online: device ? deviceIsOnline(device) : undefined,
+    device_sim_type: device?.sim_type,
+    device_trial_claimed: device?.trial_claimed,
+  };
+}
+
 function getVideoPercent(state, offset) {
   const { zoom } = state;
   if (!offset) {
@@ -103,9 +115,10 @@ function logAction(action, prevState, state) {
       gtag('event', 'page_view', {
         page_location: getPageViewEventLocation(action.payload.location.pathname),
       });
-      return;
-
-    case Types.TIMELINE_SELECT:
+      if (state.dongleId !== prevState.dongleId) {
+        gtag('event', 'select_device', { ...params, ...deviceProperties(state.device) });
+        gtag('set', { user_properties: deviceProperties(state.device) });
+      }
       if (!prevState.zoom && state.zoom) {
         params = {
           ...params,
@@ -125,44 +138,13 @@ function logAction(action, prevState, state) {
           superuser: state.profile?.superuser,
           has_prime: state.profile?.prime,
           devices_count: state.devices?.length,
-          device_prime_type: state.device?.prime_type,
-          device_type: state.device?.device_type,
-          device_version: state.device?.openpilot_version,
-          device_owner: state.device?.is_owner,
-          device_online: state.device ? deviceIsOnline(state.device) : undefined,
-          device_sim_type: state.device?.sim_type,
-          device_trial_claimed: state.device?.trial_claimed,
+          ...deviceProperties(state.device),
         },
       });
 
       gtag('event', 'page_view', {
         ...params,
         page_location: getPageViewEventLocation(window.location.pathname),
-      });
-      return;
-
-    case Types.ACTION_SELECT_DEVICE:
-      gtag('event', 'select_device', {
-        ...params,
-        device_prime_type: state.device?.prime_type,
-        device_type: state.device?.device_type,
-        device_version: state.device?.openpilot_version,
-        device_owner: state.device?.is_owner,
-        device_online: state.device ? deviceIsOnline(state.device) : undefined,
-        device_sim_type: state.device?.sim_type,
-        device_trial_claimed: state.device?.trial_claimed,
-      });
-
-      gtag('set', {
-        user_properties: {
-          device_prime_type: state.device?.prime_type,
-          device_type: state.device?.device_type,
-          device_version: state.device?.openpilot_version,
-          device_owner: state.device?.is_owner,
-          device_online: state.device ? deviceIsOnline(state.device) : undefined,
-          device_sim_type: state.device?.sim_type,
-          device_trial_claimed: state.device?.trial_claimed,
-        },
       });
       return;
 
