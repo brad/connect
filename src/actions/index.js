@@ -21,8 +21,12 @@ export function checkRoutesData() {
     if (!state.dongleId) {
       return;
     }
-    if (hasRoutesData(state)) {
-      // already has metadata, don't bother
+    const { dongleId, limit: fetchLimit, selectedRouteId } = state;
+    // a drive view needs its drive, the dashboard needs the drive list
+    const loaded = selectedRouteId
+      ? state.routes?.some((route) => route.log_id === selectedRouteId)
+      : hasRoutesData(state);
+    if (loaded) {
       return;
     }
     if (routesRequest && routesRequest.dongleId === state.dongleId) {
@@ -30,13 +34,12 @@ export function checkRoutesData() {
       return routesRequestPromise;
     }
     console.debug('We need to update the segment metadata...');
-    const { dongleId, limit: fetchLimit } = state;
     const fetchRange = state.filter;
 
     // if requested segment range not in loaded routes, fetch it explicitly
-    if (state.selectedRouteId) {
+    if (selectedRouteId) {
       routesRequest = {
-        req: api.routes.getRoutesSegments(dongleId, undefined, undefined, undefined, `${dongleId}|${state.selectedRouteId}`),
+        req: api.routes.getRoutesSegments(dongleId, undefined, undefined, undefined, `${dongleId}|${selectedRouteId}`),
         dongleId,
       };
     } else {
@@ -52,7 +55,8 @@ export function checkRoutesData() {
       if (currentRange.start !== fetchRange.start
         || currentRange.end !== fetchRange.end
         || state.limit !== fetchLimit
-        || state.dongleId !== dongleId) {
+        || state.dongleId !== dongleId
+        || state.selectedRouteId !== selectedRouteId) {
         routesRequest = null;
         dispatch(checkRoutesData());
         return;
@@ -98,8 +102,9 @@ export function checkRoutesData() {
       dispatch({
         type: Types.ACTION_ROUTES_METADATA,
         dongleId,
-        start: fetchRange.start,
-        end: fetchRange.end,
+        // one drive isn't the drive list, so the dashboard still has to load it
+        start: selectedRouteId ? null : fetchRange.start,
+        end: selectedRouteId ? null : fetchRange.end,
         routes,
       });
 
@@ -207,6 +212,9 @@ export function pushTimelineRange(log_id, start, end, allowPathChange = true) {
     }
 
     updateTimeline(state, dispatch, log_id, start, end, allowPathChange);
+    if (state.selectedRouteId && !log_id) {
+      dispatch(checkRoutesData()); // closing a drive shows the drive list
+    }
   };
 
 }
