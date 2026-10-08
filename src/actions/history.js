@@ -1,58 +1,68 @@
-import { LOCATION_CHANGE } from 'connected-react-router';
-import { parseUrl } from '../url';
-import { checkRoutesData, primeNav, streamNav, selectDevice, pushTimelineRange } from './index';
+import { LOCATION_CHANGE, replace } from 'connected-react-router';
+import { isPublic, parseUrl, urlFor } from '../url';
+import { checkRoutesData, selectDevice, selectDrive } from './index';
 import { api } from '../api/backend';
 
-export const onHistoryMiddleware = ({ dispatch, getState }) => (next) => async (action) => {
-  if (!action) {
-    return;
-  }
+// The drive and zoom that state shows, written as a URL.
+function selectedDriveUrl({ dongleId, selectedRouteId, currentRoute, zoom }) {
+  const wholeDrive = !zoom || (zoom.start === 0 && zoom.end === currentRoute?.duration);
+  return urlFor({ page: 'drive', dongleId, logId: selectedRouteId, ...(wholeDrive ? {} : zoom) });
+}
 
-  if (action.type === LOCATION_CHANGE && ['POP', 'REPLACE'].includes(action.payload.action)) {
-    const state = getState();
+// Old links name a time range instead of a drive: find the drive and replace
+// the URL with it, unless the user has navigated away in the meantime.
+function resolveLegacyUrl(pathname, { dongleId, startMs, endMs }) {
+  return async (dispatch, getState) => {
+    try {
+      const routes = await api.routes.getRoutesSegments(dongleId, startMs, endMs);
+      if (routes?.length && getState().router.location.pathname === pathname) {
+        const logId = routes[0].fullname.split('|')[1];
+        dispatch(replace(urlFor({ page: 'drive', dongleId, logId })));
+      }
+    } catch (err) {
+      console.error('Error fetching routes data for log ID conversion', err);
+    }
+  };
+}
 
-    next(action); // must be first, otherwise breaks history
-
-    const url = parseUrl(action.payload.location.pathname);
-    const pathDongleId = url.dongleId;
-    if (pathDongleId && pathDongleId !== state.dongleId) {
-      dispatch(selectDevice(pathDongleId, false, false));
+// Make state match the URL, changing only what the URL changed.
+// Which page is open is not stored: components read it with parseUrl.
+export function applyUrl(pathname) {
+  return (dispatch, getState) => {
+    const url = parseUrl(pathname);
+    if (!api.auth.isAuthenticated() && !isPublic(url)) {
+      return; // the login page is showing
     }
 
-    const pathRouteId = url.logId ?? null;
+    if (url.dongleId && url.dongleId !== getState().dongleId) {
+      // a drive URL fetches just its drive, below
+      dispatch(selectDevice(url.dongleId, !url.logId));
+    }
 
     if (url.page === 'legacy') {
-      api.routes.getRoutesSegments(pathDongleId, url.startMs, url.endMs).then((routesData) => {
-        if (routesData && routesData.length > 0) {
-          const log_id = routesData[0].fullname.split('|')[1]; 
-          const duration = routesData[0].end_time_utc_millis - routesData[0].start_time_utc_millis;
-
-          dispatch(pushTimelineRange(log_id, 0, duration, true));
-        }
-      }).catch((err) => {
-        console.error('Error fetching routes data for log ID conversion', err);
-      });
+      dispatch(resolveLegacyUrl(pathname, url));
     }
 
-    
-    if (pathRouteId || state.selectedRouteId) {
-      dispatch(pushTimelineRange(pathRouteId, url.start ?? null, url.end ?? null, false));
+    const state = getState();
+    const drive = url.page === 'drive' ? urlFor(url) : null;
+    const selected = state.selectedRouteId ? selectedDriveUrl(state) : null;
+    if (drive !== selected) {
+      dispatch(selectDrive(url.logId ?? null, url.start, url.end));
     }
 
-    if (pathDongleId && pathDongleId !== state.dongleId) {
-      dispatch(checkRoutesData());
-    }
+    dispatch(checkRoutesData());
+  };
+}
 
-    const pathPrimeNav = url.page === 'prime';
-    if (pathPrimeNav !== state.primeNav) {
-      dispatch(primeNav(pathPrimeNav));
-    }
-
-    const pathStreamNav = url.page === 'stream';
-    if (pathStreamNav !== state.streamNav) {
-      dispatch(streamNav(pathStreamNav, false));
-    }
-  } else {
-    next(action);
+// Every location change (the first load, PUSH, POP and REPLACE) goes through applyUrl.
+export const onHistoryMiddleware = ({ dispatch }) => (next) => (action) => {
+  if (!action) {
+    return undefined;
   }
+
+  const result = next(action); // the router state has to update first
+  if (action.type === LOCATION_CHANGE) {
+    dispatch(applyUrl(action.payload.location.pathname));
+  }
+  return result;
 };

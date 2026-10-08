@@ -160,6 +160,7 @@ describe('whole-app behavior', () => {
     });
   });
   afterEach(() => {
+    window.innerWidth = 1024;
     localStorage.clear();
     sessionStorage.clear();
     mocks.hardNavigate.mockClear();
@@ -302,5 +303,34 @@ describe('whole-app behavior', () => {
     await waitFor(() => expect(history.location.pathname).toBe(`/${FIRST}/${RECENT_LOG}`));
     fireEvent.click(within(document.body).getByRole('button', { name: 'Close' }));
     await waitFor(() => expect(history.location.pathname).toBe(`/${FIRST}`));
+  });
+  test('closing a drive opened by URL shows the whole drive list', async () => {
+    const { history } = await renderApp(`/${FIRST}/${LOG}`);
+    expect(await screen.findByRole('slider', { name: 'Drive timeline' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(history.location.pathname).toBe(`/${FIRST}`));
+    expect(await screen.findByText('Mock recent route start')).toBeVisible();
+  });
+
+  test('legacy timestamp URL is replaced, so back does not return to it', async () => {
+    const { history } = await renderApp(`/${FIRST}`);
+    act(() => history.push(`/${FIRST}/${START}/${START + 60_000}`));
+    await waitFor(() => expect(history.location.pathname).toBe(`/${FIRST}/${LOG}`));
+    act(() => history.goBack());
+    await waitFor(() => expect(history.location.pathname).toBe(`/${FIRST}`));
+  });
+
+  test('back and forward step through nested zooms', async () => {
+    const { history, store } = await renderApp(`/${FIRST}/${LOG}`);
+    expect(await screen.findByRole('slider', { name: 'Drive timeline' })).toBeVisible();
+    act(() => history.push(`/${FIRST}/${LOG}/10/50`));
+    act(() => history.push(`/${FIRST}/${LOG}/20/30`));
+    act(() => history.goBack());
+    await waitFor(() => expect(store.getState().zoom).toEqual({ start: 10000, end: 50000 }));
+    fireEvent.click(screen.getByRole('button', { name: 'Go Back' }));
+    await waitFor(() => expect(history.location.pathname).toBe(`/${FIRST}/${LOG}`));
+    expect(store.getState().zoom).toEqual({ start: 0, end: 60000 });
+    act(() => history.goBack());
+    await waitFor(() => expect(store.getState().zoom).toEqual({ start: 10000, end: 50000 }));
   });
 });

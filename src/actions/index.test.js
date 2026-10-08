@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 import { push } from 'connected-react-router';
-import { primeNav, pushTimelineRange, streamNav, urlForState } from './index';
+import { navigate } from './index';
 
 vi.mock('../timeline/playback', () => ({
   reducer: (state) => state,
@@ -8,46 +8,21 @@ vi.mock('../timeline/playback', () => ({
   selectLoop: vi.fn(),
 }));
 
-vi.mock('connected-react-router', async () => {
-  const originalModule = await vi.importActual('connected-react-router');
-  return {
-    __esModule: true,
-    ...originalModule,
-    push: vi.fn(),
+describe('navigate', () => {
+  const run = (params) => {
+    const dispatch = vi.fn();
+    navigate(params)(dispatch, () => ({ dongleId: 'aaaaaaaaaaaaaaaa', router: { location: { pathname: '/aaaaaaaaaaaaaaaa' } } }));
+    return dispatch.mock.calls[0]?.[0];
   };
-});
-
-describe('timeline actions', () => {
-  it.each([
-    ['device', ['dongle', null, null, null, false], '/dongle'],
-    ['whole drive', ['dongle', 'log', null, null, false], '/dongle/log'],
-    ['drive range', ['dongle', 'log', 10, 20, false], '/dongle/log/10/20'],
-    ['zero-start drive range', ['dongle', 'log', 0, 20, false], '/dongle/log'],
-    ['Prime', ['dongle', null, null, null, true], '/dongle/prime'],
-  ])('generates a %s URL', (_name, args, expected) => {
-    expect(urlForState(...args)).toBe(expected);
-  });
-
-  it('should push history state when editing zoom', () => {
-    const dispatch = vi.fn();
-    const getState = vi.fn();
-    const actionThunk = pushTimelineRange("log_id", 123, 1234);
-
-    getState.mockImplementationOnce(() => ({
-      dongleId: 'statedongle',
-      loop: {},
-      zoom: {},
-    }));
-    actionThunk(dispatch, getState);
-    expect(push).toBeCalledWith('/statedongle/log_id');
-  });
 
   it.each([
-    ['Prime', primeNav, 'primeNav', '/statedongle/prime'],
-    ['stream', streamNav, 'streamNav', '/statedongle/stream'],
-  ])('generates the %s URL while opening', (_name, action, stateKey, expected) => {
-    const dispatch = vi.fn();
-    action(true)(dispatch, () => ({ dongleId: 'statedongle', [stateKey]: false }));
-    expect(push).toHaveBeenCalledWith(expected);
+    [{ page: 'prime' }, '/aaaaaaaaaaaaaaaa/prime'],
+    [{ page: 'drive', logId: '2026-08-06--12-00-00', start: 0, end: 20000 }, '/aaaaaaaaaaaaaaaa/2026-08-06--12-00-00/0/20'],
+  ])('%j pushes %s', (params, url) => {
+    expect(run(params)).toEqual(push(url));
+  });
+
+  it('does not push the URL already shown', () => {
+    expect(run({ page: 'dashboard' })).toBeUndefined();
   });
 });
