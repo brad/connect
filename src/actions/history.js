@@ -1,13 +1,9 @@
 import { LOCATION_CHANGE, replace } from 'connected-react-router';
 import { isPublic, parseUrl, urlFor } from '../url';
-import { checkRoutesData, selectDevice, selectDrive } from './index';
+import { resetPlayback, selectLoop } from '../timeline/playback';
+import { webrtcConnectionManager } from '../utils/webrtc';
+import { checkLastRoutesData, checkRoutesData, fetchDeviceOnline, primeFetchSubscription } from './index';
 import { api } from '../api/backend';
-
-// The drive and zoom that state shows, written as a URL.
-function selectedDriveUrl({ dongleId, selectedRouteId, currentRoute, zoom }) {
-  const wholeDrive = !zoom || (zoom.start === 0 && zoom.end === currentRoute?.duration);
-  return urlFor({ page: 'drive', dongleId, logId: selectedRouteId, ...(wholeDrive ? {} : zoom) });
-}
 
 // Old links name a time range instead of a drive: find the drive and replace
 // the URL with it, unless the user has navigated away in the meantime.
@@ -25,44 +21,63 @@ function resolveLegacyUrl(pathname, { dongleId, startMs, endMs }) {
   };
 }
 
-// Make state match the URL, changing only what the URL changed.
-// Which page is open is not stored: components read it with parseUrl.
-export function applyUrl(pathname) {
+// Loop a zoomed range. Keep playing when zooming out, start over anywhere else.
+function loopDrive(prev, state, url) {
+  return (dispatch) => {
+    const range = url.end !== undefined ? url : null;
+    const { loop } = state;
+    const loopIsRange = range && loop?.startTime === range.start && loop.duration === range.end - range.start;
+    if (state.selectedRouteId !== prev.selectedRouteId || (range && !loopIsRange)) {
+      dispatch(resetPlayback());
+    }
+    dispatch(selectLoop(range?.start, range?.end));
+  };
+}
+
+// The reducer has already applied the URL (see reducers/location.js).
+// This fetches what the new location needs and restarts playback.
+function loadLocation(prev) {
   return (dispatch, getState) => {
+    const state = getState();
+    const pathname = state.router.location.pathname;
     const url = parseUrl(pathname);
     if (!api.auth.isAuthenticated() && !isPublic(url)) {
       return; // the login page is showing
     }
 
-    if (url.dongleId && url.dongleId !== getState().dongleId) {
-      // a drive URL fetches just its drive, below
-      dispatch(selectDevice(url.dongleId, !url.logId));
-    }
-
     if (url.page === 'legacy') {
       dispatch(resolveLegacyUrl(pathname, url));
     }
-
-    const state = getState();
-    const drive = url.page === 'drive' ? urlFor(url) : null;
-    const selected = state.selectedRouteId ? selectedDriveUrl(state) : null;
-    if (drive !== selected) {
-      dispatch(selectDrive(url.logId ?? null, url.start, url.end));
+    if (state.selectedRouteId !== prev.selectedRouteId || state.zoom !== prev.zoom) {
+      dispatch(loopDrive(prev, state, url));
     }
 
-    dispatch(checkRoutesData());
+    if (state.dongleId === prev.dongleId) {
+      dispatch(checkRoutesData());
+      return;
+    }
+    if (prev.dongleId) {
+      webrtcConnectionManager.disconnect();
+    }
+    if ((state.device && !state.device.shared) || state.profile?.superuser) {
+      dispatch(primeFetchSubscription(state.dongleId, state.device));
+      dispatch(fetchDeviceOnline(state.dongleId));
+    }
+    // a drive URL fetches just its drive
+    dispatch(url.logId ? checkRoutesData() : checkLastRoutesData());
   };
 }
 
-// Every location change (the first load, PUSH, POP and REPLACE) goes through applyUrl.
-export const onHistoryMiddleware = ({ dispatch }) => (next) => (action) => {
+// Every location change (the first load, PUSH, POP and REPLACE) loads what it shows.
+export const onHistoryMiddleware = ({ dispatch, getState }) => (next) => (action) => {
   if (!action) {
     return undefined;
   }
 
-  const result = next(action); // the router state has to update first
+  const prev = getState();
+  const result = next(action);
   if (action.type === LOCATION_CHANGE) {
-    dispatch(applyUrl(action.payload.location.pathname));
+    dispatch(loadLocation(prev));
   }
   return result;
 };

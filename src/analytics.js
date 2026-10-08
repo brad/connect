@@ -103,9 +103,30 @@ function logAction(action, prevState, state) {
       gtag('event', 'page_view', {
         page_location: getPageViewEventLocation(action.payload.location.pathname),
       });
-      return;
+      if (state.dongleId !== prevState.dongleId) {
+        gtag('event', 'select_device', {
+          ...params,
+          device_prime_type: state.device?.prime_type,
+          device_type: state.device?.device_type,
+          device_version: state.device?.openpilot_version,
+          device_owner: state.device?.is_owner,
+          device_online: state.device ? deviceIsOnline(state.device) : undefined,
+          device_sim_type: state.device?.sim_type,
+          device_trial_claimed: state.device?.trial_claimed,
+        });
 
-    case Types.TIMELINE_SELECT:
+        gtag('set', {
+          user_properties: {
+            device_prime_type: state.device?.prime_type,
+            device_type: state.device?.device_type,
+            device_version: state.device?.openpilot_version,
+            device_owner: state.device?.is_owner,
+            device_online: state.device ? deviceIsOnline(state.device) : undefined,
+            device_sim_type: state.device?.sim_type,
+            device_trial_claimed: state.device?.trial_claimed,
+          },
+        });
+      }
       if (!prevState.zoom && state.zoom) {
         params = {
           ...params,
@@ -138,31 +159,6 @@ function logAction(action, prevState, state) {
       gtag('event', 'page_view', {
         ...params,
         page_location: getPageViewEventLocation(window.location.pathname),
-      });
-      return;
-
-    case Types.ACTION_SELECT_DEVICE:
-      gtag('event', 'select_device', {
-        ...params,
-        device_prime_type: state.device?.prime_type,
-        device_type: state.device?.device_type,
-        device_version: state.device?.openpilot_version,
-        device_owner: state.device?.is_owner,
-        device_online: state.device ? deviceIsOnline(state.device) : undefined,
-        device_sim_type: state.device?.sim_type,
-        device_trial_claimed: state.device?.trial_claimed,
-      });
-
-      gtag('set', {
-        user_properties: {
-          device_prime_type: state.device?.prime_type,
-          device_type: state.device?.device_type,
-          device_version: state.device?.openpilot_version,
-          device_owner: state.device?.is_owner,
-          device_online: state.device ? deviceIsOnline(state.device) : undefined,
-          device_sim_type: state.device?.sim_type,
-          device_trial_claimed: state.device?.trial_claimed,
-        },
       });
       return;
 

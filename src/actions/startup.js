@@ -5,7 +5,7 @@ import { api } from '../api/backend';
 
 import { parseUrl, urlFor } from '../url';
 import { ACTION_STARTUP_DATA } from './types';
-import { primeFetchSubscription, checkLastRoutesData, selectDevice, fetchSharedDevice } from '.';
+import { primeFetchSubscription, checkLastRoutesData, fetchSharedDevice } from '.';
 
 async function initProfile() {
   const { auth, account } = api;
@@ -57,14 +57,10 @@ export default function init() {
     }
 
     if (devices.length > 0) {
-      if (!state.dongleId) {
+      if (!state.dongleId && parseUrl(state.router.location.pathname).page === 'home') {
         const selectedDongleId = window.localStorage.getItem('selectedDongleId');
         const dongleId = devices.some((d) => d.dongle_id === selectedDongleId) ? selectedDongleId : devices[0].dongle_id;
-        if (parseUrl(state.router.location.pathname).page === 'home') {
-          dispatch(replace(urlFor({ page: 'dashboard', dongleId })));
-        } else {
-          dispatch(selectDevice(dongleId));
-        }
+        dispatch(replace(urlFor({ page: 'dashboard', dongleId })));
       }
       const dongleId = getState().dongleId;
       const device = devices.find((dev) => dev.dongle_id === dongleId);

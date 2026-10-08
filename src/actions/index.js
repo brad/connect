@@ -4,10 +4,8 @@ import { athena as Athena, billing as Billing } from '../api';
 import { api } from '../api/backend';
 
 import * as Types from './types';
-import { resetPlayback, selectLoop } from '../timeline/playback';
 import {hasRoutesData } from '../timeline/segments';
 import { getDeviceFromState, deviceVersionAtLeast, deviceIsOnline } from '../utils';
-import { webrtcConnectionManager } from '../utils/webrtc';
 import { hardNavigate } from '../utils/navigation';
 import { urlFor } from '../url';
 
@@ -150,7 +148,7 @@ export function checkLastRoutesData() {
 
 // Go to a URL, filling in the current device unless `params` names one:
 // navigate({ page: 'prime' }), navigate({ page: 'drive', logId, start, end }).
-// The history middleware then applies the new URL to state.
+// The reducer then reads the new URL into state.
 export function navigate(params) {
   return (dispatch, getState) => {
     const state = getState();
@@ -160,28 +158,6 @@ export function navigate(params) {
     }
   };
 }
-
-// Show drive `logId` zoomed to [start, end] in ms, the whole drive without a
-// range, or no drive when logId is null. Called by the history middleware.
-export function selectDrive(logId, start = null, end = null) {
-  return (dispatch, getState) => {
-    const { loop } = getState();
-
-    dispatch({
-      type: Types.TIMELINE_SELECT,
-      log_id: logId,
-      start,
-      end,
-    });
-
-    if (!loop || !loop.startTime || !loop.duration || loop.startTime < start
-      || loop.startTime + loop.duration > end || loop.duration < end - start) {
-      dispatch(resetPlayback());
-      dispatch(selectLoop(start, end));
-    }
-  };
-}
-
 
 export function primeGetSubscription(dongleId, subscription) {
   return {
@@ -236,39 +212,6 @@ export function fetchDeviceOnline(dongleId) {
         fetched_at: Math.floor(Date.now() / 1000),
       });
     }).catch(console.log);
-  };
-}
-
-export function selectDevice(dongleId, fetchRoutes = true) {
-  return (dispatch, getState) => {
-    const state = getState();
-    let device;
-    if (state.devices && state.devices.length > 1) {
-      device = state.devices.find((d) => d.dongle_id === dongleId);
-    }
-    if (!device && state.device && state.device.dongle_id === dongleId) {
-      device = state.device;
-    }
-
-    // tear down existing webrtc connection
-    if (state.dongleId && state.dongleId !== dongleId) {
-      webrtcConnectionManager.disconnect();
-    }
-
-    dispatch({
-      type: Types.ACTION_SELECT_DEVICE,
-      dongleId,
-    });
-
-    dispatch(selectDrive(null));
-    if ((device && !device.shared) || state.profile?.superuser) {
-      dispatch(primeFetchSubscription(dongleId, device));
-      dispatch(fetchDeviceOnline(dongleId));
-    }
-
-    if (fetchRoutes) {
-      dispatch(checkLastRoutesData());
-    }
   };
 }
 
