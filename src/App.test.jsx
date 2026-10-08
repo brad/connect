@@ -129,6 +129,7 @@ async function renderApp(pathname, options = {}) {
   mocks.requests = [];
   window.history.replaceState({}, '', pathname);
   if (options.selected) localStorage.setItem('selectedDongleId', options.selected);
+  if (options.width) window.innerWidth = options.width;
   const history = createMemoryHistory({ initialEntries: [pathname] });
   const store = createAppStore(history, createInitialState(history.location.pathname));
   const view = render(<App history={history} store={store} />);
@@ -160,6 +161,7 @@ describe('whole-app behavior', () => {
     });
   });
   afterEach(() => {
+    window.innerWidth = 1024;
     localStorage.clear();
     sessionStorage.clear();
     mocks.hardNavigate.mockClear();
@@ -302,5 +304,62 @@ describe('whole-app behavior', () => {
     await waitFor(() => expect(history.location.pathname).toBe(`/${FIRST}/${RECENT_LOG}`));
     fireEvent.click(within(document.body).getByRole('button', { name: 'Close' }));
     await waitFor(() => expect(history.location.pathname).toBe(`/${FIRST}`));
+  });
+  test.each([['wide', 1280], ['narrow', 600]])('settings URL opens device settings on a %s window', async (_name, width) => {
+    const { history } = await renderApp(`/${SECOND}/settings`, { width });
+    expect(await screen.findByText('Device settings')).toBeVisible();
+    expect(screen.getByDisplayValue('Alpha')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(history.location.pathname).toBe(`/${SECOND}`));
+    expect(screen.queryByText('Device settings')).not.toBeInTheDocument();
+    act(() => history.goBack());
+    expect(await screen.findByText('Device settings')).toBeVisible();
+  });
+
+  test('the settings button opens settings for its device by URL', async () => {
+    const { history } = await renderApp(`/${FIRST}`, { width: 1280 });
+    const alpha = (await screen.findByText('Alpha')).closest('a');
+    fireEvent.click(within(alpha).getByRole('button', { name: 'device settings' }));
+    await waitFor(() => expect(history.location.pathname).toBe(`/${SECOND}/settings`));
+    expect(await screen.findByDisplayValue('Alpha')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Prime settings' }));
+    await waitFor(() => expect(history.location.pathname).toBe(`/${SECOND}/prime`));
+    expect(await screen.findByRole('heading', { name: 'comma prime' })).toBeVisible();
+  });
+
+  test('shared devices have no settings', async () => {
+    await renderApp(`/${SHARED}/settings`);
+    expect(await screen.findByText('Mock recent route start')).toBeVisible();
+    expect(screen.queryByText('Device settings')).not.toBeInTheDocument();
+  });
+
+  test('closing a drive opened by URL shows the whole drive list', async () => {
+    const { history } = await renderApp(`/${FIRST}/${LOG}`);
+    expect(await screen.findByRole('slider', { name: 'Drive timeline' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(history.location.pathname).toBe(`/${FIRST}`));
+    expect(await screen.findByText('Mock recent route start')).toBeVisible();
+  });
+
+  test('legacy timestamp URL is replaced, so back does not return to it', async () => {
+    const { history } = await renderApp(`/${FIRST}`);
+    act(() => history.push(`/${FIRST}/${START}/${START + 60_000}`));
+    await waitFor(() => expect(history.location.pathname).toBe(`/${FIRST}/${LOG}`));
+    act(() => history.goBack());
+    await waitFor(() => expect(history.location.pathname).toBe(`/${FIRST}`));
+  });
+
+  test('back and forward step through nested zooms', async () => {
+    const { history, store } = await renderApp(`/${FIRST}/${LOG}`);
+    expect(await screen.findByRole('slider', { name: 'Drive timeline' })).toBeVisible();
+    act(() => history.push(`/${FIRST}/${LOG}/10/50`));
+    act(() => history.push(`/${FIRST}/${LOG}/20/30`));
+    act(() => history.goBack());
+    await waitFor(() => expect(store.getState().zoom).toEqual({ start: 10000, end: 50000 }));
+    fireEvent.click(screen.getByRole('button', { name: 'Go Back' }));
+    await waitFor(() => expect(history.location.pathname).toBe(`/${FIRST}/${LOG}`));
+    expect(store.getState().zoom).toEqual({ start: 0, end: 60000 });
+    act(() => history.goBack());
+    await waitFor(() => expect(store.getState().zoom).toEqual({ start: 10000, end: 50000 }));
   });
 });
