@@ -226,7 +226,6 @@ class DeviceSettingsModal extends Component {
 
   onPrimeSettings() {
     this.props.dispatch(navigate({ page: 'prime', dongleId: this.props.dongleId }));
-    this.props.onClose();
   }
 
   async unpairDevice() {

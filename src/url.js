@@ -5,6 +5,7 @@ const ROUTES = [
   { page: 'dashboard', path: '/:dongleId' },
   { page: 'prime', path: '/:dongleId/prime' },
   { page: 'stream', path: '/:dongleId/stream' },
+  { page: 'settings', path: '/:dongleId/settings' },
   { page: 'drive', path: '/:dongleId/:logId/:start/:end', public: true },
   { page: 'drive', path: '/:dongleId/:logId', public: true },
   { page: 'legacy', path: '/:dongleId/:startMs/:endMs', public: true }, // old links to a time range

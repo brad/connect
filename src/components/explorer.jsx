@@ -24,6 +24,7 @@ import { subscribeWindowSize } from '../hooks/window';
 
 import DriveView from './DriveView';
 import NoDeviceUpsell from './DriveView/NoDeviceUpsell';
+import DeviceSettingsModal from './Dashboard/DeviceSettingsModal';
 import Referrals from './Referrals';
 
 const styles = (theme) => ({
@@ -199,9 +200,10 @@ class ExplorerApp extends Component {
 
   render() {
     const {
-      classes, currentRoute, devices, dongleId, selectedRouteId, pathname, profile,
+      classes, currentRoute, devices, dongleId, device, selectedRouteId, pathname, profile,
     } = this.props;
     const { page } = parseUrl(pathname);
+    const settingsOpen = page === 'settings' && Boolean(device?.is_owner || profile?.superuser);
     const { drawerIsOpen, pairLoading, pairError, pairDongleId, windowWidth } = this.state;
 
     const noDevicesUpsell = (devices?.length === 0 && !dongleId);
@@ -251,6 +253,11 @@ class ExplorerApp extends Component {
                 : ((currentRoute || selectedRouteId) ? <DriveView /> : <Dashboard />)}
             </div>
             <IosPwaPopup />
+            <DeviceSettingsModal
+              isOpen={ settingsOpen }
+              dongleId={ settingsOpen ? dongleId : null }
+              onClose={ this.showDashboard }
+            />
             <Modal open={ Boolean(pairLoading || pairError || pairDongleId) } onClose={ this.closePair }>
               <Paper className={classes.modal}>
                 <Typography variant="title">Pairing device</Typography>
@@ -284,6 +291,7 @@ const stateToProps = (state) => ({
   currentRoute: state.currentRoute,
   selectedRouteId: state.selectedRouteId,
   limit: state.limit,
+  device: state.device,
   profile: state.profile,
 });
 
