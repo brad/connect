@@ -105,7 +105,7 @@ function logAction(action, prevState, state) {
       });
       return;
 
-    case Types.TIMELINE_PUSH_SELECTION:
+    case Types.TIMELINE_SELECT:
       if (!prevState.zoom && state.zoom) {
         params = {
           ...params,

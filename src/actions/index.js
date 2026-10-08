@@ -9,6 +9,7 @@ import {hasRoutesData } from '../timeline/segments';
 import { getDeviceFromState, deviceVersionAtLeast, deviceIsOnline } from '../utils';
 import { webrtcConnectionManager } from '../utils/webrtc';
 import { hardNavigate } from '../utils/navigation';
+import { urlFor } from '../url';
 
 let routesRequest = null;
 let routesRequestPromise = null;
@@ -21,8 +22,12 @@ export function checkRoutesData() {
     if (!state.dongleId) {
       return;
     }
-    if (hasRoutesData(state)) {
-      // already has metadata, don't bother
+    const { dongleId, limit: fetchLimit, selectedRouteId } = state;
+    // a drive view needs its drive, the dashboard needs the drive list
+    const loaded = selectedRouteId
+      ? state.routes?.some((route) => route.log_id === selectedRouteId)
+      : hasRoutesData(state);
+    if (loaded) {
       return;
     }
     if (routesRequest && routesRequest.dongleId === state.dongleId) {
@@ -30,13 +35,12 @@ export function checkRoutesData() {
       return routesRequestPromise;
     }
     console.debug('We need to update the segment metadata...');
-    const { dongleId, limit: fetchLimit } = state;
     const fetchRange = state.filter;
 
     // if requested segment range not in loaded routes, fetch it explicitly
-    if (state.selectedRouteId) {
+    if (selectedRouteId) {
       routesRequest = {
-        req: api.routes.getRoutesSegments(dongleId, undefined, undefined, undefined, `${dongleId}|${state.selectedRouteId}`),
+        req: api.routes.getRoutesSegments(dongleId, undefined, undefined, undefined, `${dongleId}|${selectedRouteId}`),
         dongleId,
       };
     } else {
@@ -52,7 +56,8 @@ export function checkRoutesData() {
       if (currentRange.start !== fetchRange.start
         || currentRange.end !== fetchRange.end
         || state.limit !== fetchLimit
-        || state.dongleId !== dongleId) {
+        || state.dongleId !== dongleId
+        || state.selectedRouteId !== selectedRouteId) {
         routesRequest = null;
         dispatch(checkRoutesData());
         return;
@@ -98,8 +103,9 @@ export function checkRoutesData() {
       dispatch({
         type: Types.ACTION_ROUTES_METADATA,
         dongleId,
-        start: fetchRange.start,
-        end: fetchRange.end,
+        // one drive isn't the drive list, so the dashboard still has to load it
+        start: selectedRouteId ? null : fetchRange.start,
+        end: selectedRouteId ? null : fetchRange.end,
         routes,
       });
 
@@ -142,73 +148,38 @@ export function checkLastRoutesData() {
   };
 }
 
-export function urlForState(dongleId, log_id, start, end, prime) {
-  const path = [dongleId];
-
-  if (log_id) {
-    path.push(log_id);
-    if (start && end) {
-      path.push(start);
-      path.push(end);
-    }
-  } else if (prime) {
-    path.push('prime');
-  }
-
-  return `/${path.join('/')}`;
-}
-
-function updateTimeline(state, dispatch, log_id, start, end, allowPathChange) {
-  if (!state.loop || !state.loop.startTime || !state.loop.duration || state.loop.startTime < start
-    || state.loop.startTime + state.loop.duration > end || state.loop.duration < end - start) {
-    dispatch(resetPlayback());
-    dispatch(selectLoop(start, end));
-  }
-
-  if (allowPathChange) {
-    const route = state.routes?.find((candidate) => candidate.log_id === log_id);
-    const wholeDrive = start == null || end == null || (start === 0 && end === route?.duration);
-
-    const urlStart = wholeDrive ? null : Math.floor(start / 1000);
-    const urlEnd = wholeDrive ? null : Math.floor(end / 1000);
-    const desiredPath = urlForState(state.dongleId, log_id, urlStart, urlEnd, false);
-
-    if (currentPathname(state) !== desiredPath) {
-      dispatch(push(desiredPath));
-    }
-  }
-}
-
-export function popTimelineRange(log_id, allowPathChange = true) {
+// Go to a URL, filling in the current device unless `params` names one:
+// navigate({ page: 'prime' }), navigate({ page: 'drive', logId, start, end }).
+// The history middleware then applies the new URL to state.
+export function navigate(params) {
   return (dispatch, getState) => {
     const state = getState();
-    if (state.zoom.previous) {
-      dispatch({
-        type: Types.TIMELINE_POP_SELECTION,
-      });
-
-      const { start, end } = state.zoom.previous;
-      updateTimeline(state, dispatch, log_id, start, end, allowPathChange);
+    const url = urlFor({ dongleId: state.dongleId, ...params });
+    if (url !== currentPathname(state)) {
+      dispatch(push(url));
     }
   };
 }
 
-export function pushTimelineRange(log_id, start, end, allowPathChange = true) {
+// Show drive `logId` zoomed to [start, end] in ms, the whole drive without a
+// range, or no drive when logId is null. Called by the history middleware.
+export function selectDrive(logId, start = null, end = null) {
   return (dispatch, getState) => {
-    const state = getState();
+    const { loop } = getState();
 
-    if (state.zoom?.start !== start || state.zoom?.end !== end || state.selectedRouteId !== log_id) {
-      dispatch({
-        type: Types.TIMELINE_PUSH_SELECTION,
-        log_id,
-        start,
-        end,
-      });
+    dispatch({
+      type: Types.TIMELINE_SELECT,
+      log_id: logId,
+      start,
+      end,
+    });
+
+    if (!loop || !loop.startTime || !loop.duration || loop.startTime < start
+      || loop.startTime + loop.duration > end || loop.duration < end - start) {
+      dispatch(resetPlayback());
+      dispatch(selectLoop(start, end));
     }
-
-    updateTimeline(state, dispatch, log_id, start, end, allowPathChange);
   };
-
 }
 
 
@@ -268,7 +239,7 @@ export function fetchDeviceOnline(dongleId) {
   };
 }
 
-export function selectDevice(dongleId, allowPathChange = true, fetchRoutes = true) {
+export function selectDevice(dongleId, fetchRoutes = true) {
   return (dispatch, getState) => {
     const state = getState();
     let device;
@@ -289,7 +260,7 @@ export function selectDevice(dongleId, allowPathChange = true, fetchRoutes = tru
       dongleId,
     });
 
-    dispatch(pushTimelineRange(null, null, null, false));
+    dispatch(selectDrive(null));
     if ((device && !device.shared) || state.profile?.superuser) {
       dispatch(primeFetchSubscription(dongleId, device));
       dispatch(fetchDeviceOnline(dongleId));
@@ -297,61 +268,6 @@ export function selectDevice(dongleId, allowPathChange = true, fetchRoutes = tru
 
     if (fetchRoutes) {
       dispatch(checkLastRoutesData());
-    }
-
-    if (allowPathChange) {
-      const desiredPath = urlForState(dongleId, null, null, null, null);
-      if (currentPathname(state) !== desiredPath) {
-        dispatch(push(desiredPath));
-      }
-    }
-  };
-}
-
-export function primeNav(nav, allowPathChange = true) {
-  return (dispatch, getState) => {
-    const state = getState();
-    if (!state.dongleId) {
-      return;
-    }
-
-    if (state.primeNav !== nav) {
-      dispatch({
-        type: Types.ACTION_PRIME_NAV,
-        primeNav: nav,
-      });
-    }
-
-    if (allowPathChange) {
-      const curPath = currentPathname(state);
-      const desiredPath = urlForState(state.dongleId, null, null, null, nav);
-      if (curPath !== desiredPath) {
-        dispatch(push(desiredPath));
-      }
-    }
-  };
-}
-
-export function streamNav(nav, allowPathChange = true) {
-  return (dispatch, getState) => {
-    const state = getState();
-    if (!state.dongleId) {
-      return;
-    }
-
-    if (state.streamNav !== nav) {
-      dispatch({
-        type: Types.ACTION_STREAM_NAV,
-        streamNav: nav,
-      });
-    }
-
-    if (allowPathChange) {
-      const curPath = currentPathname(state);
-      const desiredPath = nav ? `/${state.dongleId}/stream` : `/${state.dongleId}`;
-      if (curPath !== desiredPath) {
-        dispatch(push(desiredPath));
-      }
     }
   };
 }
